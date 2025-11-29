@@ -1,7 +1,9 @@
 package com.runningbird.fabricbungeeforwarding.mixin;
 
+import com.google.common.collect.HashMultimap;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
+import com.mojang.authlib.properties.PropertyMap;
 import com.runningbird.fabricbungeeforwarding.net.ForwardedDataHolder;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.Connection;
@@ -46,13 +48,23 @@ public abstract class ServerLoginPacketListenerImplMixin {
             Component message = Component.literal("If you wish to use IP forwarding, please enable it in your proxy config as well!");
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
             this.connection.disconnect(message);
+            com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting {}: missing forwarded data", packet.name());
             ci.cancel();
             return;
         }
 
-        GameProfile profile = this.bff$buildProfile(packet.name(), holder);
-        this.startClientVerification(profile);
-        ci.cancel();
+        try {
+            GameProfile profile = this.bff$buildProfile(packet.name(), holder);
+            this.startClientVerification(profile);
+            com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.debug("[BFF] Built forwarded profile name={} uuid={} props={}", profile.name(), profile.id(), profile.properties().size());
+            ci.cancel();
+        } catch (Exception ex) {
+            Component message = Component.literal("Unable to apply forwarded profile from proxy.");
+            this.connection.send(new ClientboundLoginDisconnectPacket(message));
+            this.connection.disconnect(message);
+            com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.error("[BFF] Failed to apply forwarded profile for {}: {}", packet.name(), ex.toString(), ex);
+            ci.cancel();
+        }
     }
 
     private GameProfile bff$buildProfile(String name, ForwardedDataHolder holder) {
@@ -61,15 +73,16 @@ public abstract class ServerLoginPacketListenerImplMixin {
             uuid = UUIDUtil.createOfflinePlayerUUID(name);
         }
 
-        GameProfile profile = new GameProfile(uuid, name);
-        Property[] properties = holder.bff$getForwardedProfile();
-        if (properties != null) {
-            for (Property property : properties) {
+        com.google.common.collect.Multimap<String, Property> multimap = HashMultimap.create();
+        Property[] forwarded = holder.bff$getForwardedProfile();
+        if (forwarded != null) {
+            for (Property property : forwarded) {
                 if (property != null) {
-                    profile.properties().put(property.name(), property);
+                    multimap.put(property.name(), property);
                 }
             }
         }
-        return profile;
+
+        return new GameProfile(uuid, name, new PropertyMap(multimap));
     }
 }

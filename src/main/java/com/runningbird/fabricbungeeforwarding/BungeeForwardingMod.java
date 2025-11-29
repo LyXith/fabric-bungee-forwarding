@@ -5,7 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class BungeeForwardingMod implements DedicatedServerModInitializer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("fabric-bungee-forwarding");
+    public static final Logger LOGGER = LoggerFactory.getLogger("fabric-bungee-forwarding");
 
     @Override
     public void onInitializeServer() {

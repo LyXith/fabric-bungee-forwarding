@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.mojang.authlib.properties.Property;
 import com.mojang.util.UndashedUuid;
 import com.runningbird.fabricbungeeforwarding.net.ForwardedDataHolder;
+import com.runningbird.fabricbungeeforwarding.BungeeForwardingMod;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
@@ -43,13 +44,16 @@ public abstract class ServerHandshakePacketListenerImplMixin {
             return;
         }
 
-        String[] parts = packet.hostName().split("\u0000");
+        String rawHost = packet.hostName();
+        BungeeForwardingMod.LOGGER.debug("[BFF] Incoming host string: {}", rawHost);
+        String[] parts = rawHost.split("\u0000");
         boolean hasForwarding = parts.length == 3 || parts.length == 4;
         if (!hasForwarding || !BFF_HOST_PATTERN.matcher(parts[1]).matches()) {
             Component message = Component.literal("If you wish to use IP forwarding, please enable it in your proxy config as well!");
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
             this.connection.disconnect(message);
+            BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: invalid forwarding payload parts={} host={}", parts.length, rawHost);
             ci.cancel();
             return;
         }
@@ -62,6 +66,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
             this.connection.disconnect(message);
+            BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: bad UUID {}, error={}", parts[2], ex.toString());
             ci.cancel();
             return;
         }
@@ -76,6 +81,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
                 this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
                 this.connection.send(new ClientboundLoginDisconnectPacket(message));
                 this.connection.disconnect(message);
+                BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: profile parse failed, error={}", ex.toString());
                 ci.cancel();
                 return;
             }
@@ -87,6 +93,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
             this.connection.disconnect(message);
+            BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: remote address missing");
             ci.cancel();
             return;
         }
@@ -96,5 +103,6 @@ public abstract class ServerHandshakePacketListenerImplMixin {
             .toArray(Property[]::new);
 
         ((ForwardedDataHolder) this.connection).bff$setForwardedData(uuid, filtered, parts[0], new InetSocketAddress(parts[1], remote.getPort()));
+        BungeeForwardingMod.LOGGER.debug("[BFF] Forwarded data accepted: realHost={} forwardedIp={} uuid={} props={}", parts[0], parts[1], uuid, filtered.length);
     }
 }
