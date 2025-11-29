@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "bungeeforwarding",
+  "version": "${version}",
+  "name": "Fabric Bungee Forwarding",
+  "description": "Implements BungeeCord-style IP/UUID forwarding for Fabric servers.",
+  "authors": [
+    "runningbird2"
+  ],
+  "license": "GPL-3.0-or-later",
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "com.runningbird.fabricbungeeforwarding.BungeeForwardingMod"
+    ]
+  },
+  "mixins": [
+    "bungee_forwarding.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "fabric-api": "*",
+    "minecraft": "1.21.10"
+  }
+}
