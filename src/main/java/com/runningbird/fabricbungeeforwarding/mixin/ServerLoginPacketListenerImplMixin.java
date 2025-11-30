@@ -56,7 +56,7 @@ public abstract class ServerLoginPacketListenerImplMixin {
         try {
             GameProfile profile = this.bff$buildProfile(packet.name(), holder);
             this.startClientVerification(profile);
-            com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.debug("[BFF] Built forwarded profile name={} uuid={} props={}", profile.name(), profile.id(), profile.properties().size());
+            com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.debug("[BFF] Built forwarded profile name={} uuid={} props={}", profile.getName(), profile.getId(), profile.getProperties().size());
             ci.cancel();
         } catch (Exception ex) {
             Component message = Component.literal("Unable to apply forwarded profile from proxy.");
@@ -83,6 +83,8 @@ public abstract class ServerLoginPacketListenerImplMixin {
             }
         }
 
-        return new GameProfile(uuid, name, new PropertyMap(multimap));
+        PropertyMap propertyMap = new PropertyMap();
+        multimap.asMap().forEach((key, values) -> propertyMap.putAll(key, values));
+        return new GameProfile(uuid, name, propertyMap);
     }
 }
