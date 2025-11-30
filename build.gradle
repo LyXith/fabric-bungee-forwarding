@@ -3,7 +3,8 @@ plugins {
     id 'maven-publish'
 }
 
-version = project.mod_version
+// Include the targeted Minecraft version in the published version so the jar and metadata reflect both.
+version = "${project.mod_version}+${project.minecraft_version}"
 group = project.maven_group
 
 base {
