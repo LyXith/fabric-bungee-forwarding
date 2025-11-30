@@ -89,14 +89,37 @@ public abstract class ServerLoginPacketListenerImplMixin {
         }
 
         GameProfile profile = new GameProfile(uuid, name);
-        PropertyMap propertyMap = ((GameProfileAccessor) (Object) profile).bff$getProperties();
-        backing.asMap().forEach((key, values) -> {
-            for (Property value : values) {
-                if (value != null) {
-                    propertyMap.put(key, value);
-                }
-            }
-        });
+        PropertyMap propertyMap = this.bff$createPropertyMap(backing);
+        ((GameProfileAccessor) (Object) profile).bff$setProperties(propertyMap);
         return profile;
+    }
+
+    private PropertyMap bff$createPropertyMap(com.google.common.collect.Multimap<String, Property> backing) {
+        // Try ctor(PropertyMap(Multimap)) if available (1.21.10+), otherwise fall back to no-arg.
+        try {
+            java.lang.reflect.Constructor<PropertyMap> ctor = PropertyMap.class.getDeclaredConstructor(com.google.common.collect.Multimap.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(backing);
+        } catch (NoSuchMethodException ignored) {
+            // fall through
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to construct PropertyMap", ex);
+        }
+
+        try {
+            java.lang.reflect.Constructor<PropertyMap> ctor = PropertyMap.class.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            PropertyMap propertyMap = ctor.newInstance();
+            backing.asMap().forEach((key, values) -> {
+                for (Property value : values) {
+                    if (value != null) {
+                        propertyMap.put(key, value);
+                    }
+                }
+            });
+            return propertyMap;
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to construct PropertyMap (no-arg)", ex);
+        }
     }
 }
