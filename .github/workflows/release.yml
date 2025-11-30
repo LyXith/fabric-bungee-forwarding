@@ -134,7 +134,7 @@ jobs:
       - name: Publish to Modrinth
         uses: Kir-Antipov/mc-publish@v3.3
         with:
-          modrinth-id: fabric-bungee
+          modrinth-id: SMv011V3
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           files: build/libs/fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}.jar
           name: Fabric Bungee Forwarding ${{ steps.versions.outputs.full_version }}
