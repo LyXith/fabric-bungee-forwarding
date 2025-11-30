@@ -78,19 +78,19 @@ public abstract class ServerLoginPacketListenerImplMixin {
             uuid = UUIDUtil.createOfflinePlayerUUID(name);
         }
 
-        com.google.common.collect.Multimap<String, Property> multimap = HashMultimap.create();
+        com.google.common.collect.Multimap<String, Property> backing = HashMultimap.create();
         Property[] forwarded = holder.bff$getForwardedProfile();
         if (forwarded != null) {
             for (Property property : forwarded) {
                 if (property != null && property.name() != null && !property.name().isBlank()) {
-                    multimap.put(property.name(), property);
+                    backing.put(property.name(), property);
                 }
             }
         }
 
         GameProfile profile = new GameProfile(uuid, name);
-        PropertyMap propertyMap = ((GameProfileAccessor) (Object) profile).bff$getProperties();
-        multimap.asMap().forEach((key, values) -> propertyMap.putAll(key, values));
+        PropertyMap propertyMap = new PropertyMap(backing);
+        ((GameProfileAccessor) (Object) profile).bff$setProperties(propertyMap);
         return profile;
     }
 }

@@ -17,4 +17,7 @@ public interface GameProfileAccessor {
 
     @Accessor("properties")
     PropertyMap bff$getProperties();
+
+    @Accessor("properties")
+    void bff$setProperties(PropertyMap map);
 }
