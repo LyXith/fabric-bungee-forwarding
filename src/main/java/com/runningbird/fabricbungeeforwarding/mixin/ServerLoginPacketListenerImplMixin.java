@@ -58,8 +58,8 @@ public abstract class ServerLoginPacketListenerImplMixin {
             this.startClientVerification(profile);
             com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.debug(
                 "[BFF] Built forwarded profile name={} uuid={} props={}",
-                profile.name(),
-                profile.id(),
+                ((GameProfileAccessor) (Object) profile).bff$getName(),
+                ((GameProfileAccessor) (Object) profile).bff$getId(),
                 holder.bff$getForwardedProfile() == null ? 0 : holder.bff$getForwardedProfile().length
             );
             ci.cancel();
@@ -88,7 +88,15 @@ public abstract class ServerLoginPacketListenerImplMixin {
             }
         }
 
-        PropertyMap propertyMap = new PropertyMap(backing);
-        return new GameProfile(uuid, name, propertyMap);
+        GameProfile profile = new GameProfile(uuid, name);
+        PropertyMap propertyMap = ((GameProfileAccessor) (Object) profile).bff$getProperties();
+        backing.asMap().forEach((key, values) -> {
+            for (Property value : values) {
+                if (value != null) {
+                    propertyMap.put(key, value);
+                }
+            }
+        });
+        return profile;
     }
 }
