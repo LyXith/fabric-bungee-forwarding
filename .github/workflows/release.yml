@@ -1,206 +1,34 @@
 name: Build Mod
 
-on:
-  workflow_dispatch:
-    inputs:
-      mod_version:
-        description: "Mod version (e.g., 1.0.0)"
-        required: true
-        default: "1.0.0"
-      minecraft_versions:
-        description: "Minecraft versions to build (comma-separated)"
-        required: false
-        default: "1.21.5,1.21.4,1.20.6"
-      include_all_versions:
-        description: "Include all supported Minecraft versions?"
-        type: boolean
-        default: false
+on: workflow_dispatch
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build for Minecraft ${{ matrix.minecraft }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        minecraft: ${{ fromJSON(
-          inputs.include_all_versions == 'true' 
-          ? '["1.21","1.21.1","1.21.2","1.21.3","1.21.4","1.21.5","1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11","1.20.6","1.20.5"]'
-          : format('[{0}]', replace(replace(inputs.minecraft_versions, ' ', ''), ',', '","'))
-        ) }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
-
-      - name: Determine versions
-        id: versions
+      
+      - name: Build for Minecraft 1.21.10
         run: |
-          # 依赖版本映射
-          declare -A FABRIC_MAP=(
-            ["1.21"]="0.102.0+1.21"
-            ["1.21.1"]="0.116.7+1.21.1"
-            ["1.21.2"]="0.106.1+1.21.2"
-            ["1.21.3"]="0.114.1+1.21.3"
-            ["1.21.4"]="0.119.4+1.21.4"
-            ["1.21.5"]="0.128.2+1.21.5"
-            ["1.21.6"]="0.128.2+1.21.6"
-            ["1.21.7"]="0.129.0+1.21.7"
-            ["1.21.8"]="0.136.1+1.21.8"
-            ["1.21.9"]="0.134.0+1.21.9"
-            ["1.21.10"]="0.138.3+1.21.10"
-            ["1.21.11"]="0.140.2+1.21.11"
-            ["1.20.6"]="0.100.8+1.20.6"
-            ["1.20.5"]="0.97.8+1.20.5"
-          )
-
-          MC_VERSION="${{ matrix.minecraft }}"
-          MOD_VERSION="${{ github.event.inputs.mod_version }}"
+          # 获取 Fabric Loader 版本
+          LOADER_VERSION=$(curl -s "https://meta.fabricmc.net/v2/versions/loader/1.21.10" | jq -r '.[0].loader.version')
           
-          # 获取 Loader 版本
-          LOADER_RESPONSE=$(curl -s "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}" || echo "[]")
-          LOADER_VERSION=$(echo "${LOADER_RESPONSE}" | jq -r '[.[] | select(.loader.stable == true)][0].loader.version // .[0].loader.version // "0.140.2"')
-          
-          # 获取 Fabric API 版本
-          FABRIC_API_VERSION="${FABRIC_MAP[${MC_VERSION}]}"
-          
-          if [ -z "${FABRIC_API_VERSION}" ] || [ "${FABRIC_API_VERSION}" = "null" ]; then
-            FABRIC_RESPONSE=$(curl -s "https://api.modrinth.com/v2/project/fabric-api/version?game_versions=[\"${MC_VERSION}\"]&loaders=[\"fabric\"]" || echo "[]")
-            FABRIC_API_VERSION=$(echo "${FABRIC_RESPONSE}" | jq -r '.[0].version_number // "0.140.2"')
-          fi
-
-          echo "mod=${MOD_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "mc=${MC_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "loader=${LOADER_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "fabric_api=${FABRIC_API_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "full_version=${MOD_VERSION}+${MC_VERSION}" >> "${GITHUB_OUTPUT}"
-
-      - name: Build
-        run: |
+          # 构建（假设 gradle 脚本已经配置好版本）
           ./gradlew clean build -x test \
-            -Pmod_version=${{ steps.versions.outputs.mod }} \
-            -Pminecraft_version=${{ matrix.minecraft }} \
-            -Pfabric_version=${{ steps.versions.outputs.fabric_api }} \
-            -Ploader_version=${{ steps.versions.outputs.loader }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+            -Pminecraft_version=1.21.10 \
+            -Ploader_version=$LOADER_VERSION
+      
+      - uses: actions/upload-artifact@v4
         with:
-          name: fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}
-          path: build/libs/fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}.jar
-          if-no-files-found: error
+          name: fabric-bungee-forwarding-1.21.10
+          path: build/libs/*.jar
           retention-days: 30
-
-  package-artifacts:
-    name: Package all artifacts
-    runs-on: ubuntu-latest
-    needs: build
-    if: always()
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create zip archive
-        run: |
-          MOD_VERSION="${{ github.event.inputs.mod_version }}"
-          ZIP_NAME="fabric-bungee-forwarding-${MOD_VERSION}.zip"
-          
-          # 创建文件夹
-          mkdir -p packaged
-          
-          # 复制所有 jar 文件到临时目录
-          mkdir -p temp_builds
-          find artifacts -name "*.jar" -exec cp {} temp_builds/ \;
-          
-          # 创建 README.txt
-          cat > temp_builds/README.txt << EOF
-Fabric Bungee Forwarding ${MOD_VERSION}
-=======================================
-
-Build Information:
-- Mod Version: ${MOD_VERSION}
-- Built on: $(date)
-- GitHub Workflow: ${{ github.run_id }}
-
-Supported Minecraft Versions:
-$(
-  IFS=','; 
-  versions="${{ github.event.inputs.minecraft_versions }}";
-  if [ "${{ github.event.inputs.include_all_versions }}" = "true" ]; then
-    echo "1.21, 1.21.1, 1.21.2, 1.21.3, 1.21.4"
-    echo "1.21.5, 1.21.6, 1.21.7, 1.21.8, 1.21.9"
-    echo "1.21.10, 1.21.11, 1.20.6, 1.20.5"
-  else
-    for ver in $versions; do
-      echo "- $ver"
-    done
-  fi
-)
-
-Installation:
-1. Download the appropriate jar file for your Minecraft version
-2. Place it in your mods folder
-3. Restart your server/client
-
-Note: Each jar file is built for a specific Minecraft version.
-Please make sure to use the correct version.
-
-Files in this archive:
-EOF
-          
-          # 添加文件列表到 README
-          ls -1 temp_builds/*.jar | xargs -I {} basename {} >> temp_builds/README.txt
-          
-          # 创建 zip 文件
-          cd temp_builds && zip -r "../packaged/${ZIP_NAME}" .
-          
-          # 清理
-          cd .. && rm -rf temp_builds
-
-      - name: Upload packaged archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: fabric-bungee-forwarding-${{ github.event.inputs.mod_version }}-package
-          path: packaged/
-          retention-days: 30
-
-      - name: Generate build summary
-        run: |
-          MOD_VERSION="${{ github.event.inputs.mod_version }}"
-          echo "## Build Summary for Fabric Bungee Forwarding ${MOD_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Build completed successfully!**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Built versions:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # 列出所有构建的版本
-          if [ "${{ github.event.inputs.include_all_versions }}" = "true" ]; then
-            echo "- All supported Minecraft versions (14 versions)" >> $GITHUB_STEP_SUMMARY
-          else
-            IFS=',' read -ra VERSIONS <<< "${{ github.event.inputs.minecraft_versions }}"
-            for version in "${VERSIONS[@]}"; do
-              echo "- Minecraft $version" >> $GITHUB_STEP_SUMMARY
-            done
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Artifacts available for download:" >> $GITHUB_STEP_SUMMARY
-          echo "1. Individual jar files for each Minecraft version" >> $GITHUB_STEP_SUMMARY
-          echo "2. Complete package (zip archive)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next steps:" >> $GITHUB_STEP_SUMMARY
-          echo "Download artifacts from the 'Artifacts' section above." >> $GITHUB_STEP_SUMMARY
