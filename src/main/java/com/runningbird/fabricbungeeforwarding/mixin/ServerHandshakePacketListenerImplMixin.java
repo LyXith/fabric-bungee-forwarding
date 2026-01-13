@@ -50,9 +50,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
         if (!hasForwarding || !BFF_HOST_PATTERN.matcher(parts[1]).matches()) {
             Component message = Component.literal("If you wish to use IP forwarding, please enable it in your proxy config as well!");
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
-            this.connection.disconnect(message);
             BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: invalid forwarding payload parts={} host={}", parts.length, rawHost);
-            ci.cancel();
             return;
         }
 
@@ -62,9 +60,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
         } catch (IllegalArgumentException ex) {
             Component message = Component.literal("Invalid forwarded UUID from proxy.");
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
-            this.connection.disconnect(message);
             BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: bad UUID {}, error={}", parts[2], ex.toString());
-            ci.cancel();
             return;
         }
 
@@ -76,9 +72,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
             } catch (Exception ex) {
                 Component message = Component.literal("Unable to read player profile from proxy.");
                 this.connection.send(new ClientboundLoginDisconnectPacket(message));
-                this.connection.disconnect(message);
                 BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: profile parse failed, error={}", ex.toString());
-                ci.cancel();
                 return;
             }
         }
@@ -87,9 +81,7 @@ public abstract class ServerHandshakePacketListenerImplMixin {
         if (remote == null) {
             Component message = Component.literal("Unable to determine remote address for forwarding.");
             this.connection.send(new ClientboundLoginDisconnectPacket(message));
-            this.connection.disconnect(message);
             BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting connection: remote address missing");
-            ci.cancel();
             return;
         }
 
