@@ -46,7 +46,6 @@ public abstract class ServerLoginPacketListenerImplMixin {
         ForwardedDataHolder holder = (ForwardedDataHolder) this.connection;
         if (!holder.bff$hasForwardedData()) {
             Component message = Component.literal("If you wish to use IP forwarding, please enable it in your proxy config as well!");
-            this.connection.send(new ClientboundLoginDisconnectPacket(message));
             com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.warn("[BFF] Rejecting {}: missing forwarded data", packet.name());
             return;
         }
@@ -62,7 +61,6 @@ public abstract class ServerLoginPacketListenerImplMixin {
             );
         } catch (Exception ex) {
             Component message = Component.literal("Unable to apply forwarded profile from proxy.");
-            this.connection.send(new ClientboundLoginDisconnectPacket(message));
             com.runningbird.fabricbungeeforwarding.BungeeForwardingMod.LOGGER.error("[BFF] Failed to apply forwarded profile for {}: {}", packet.name(), ex.toString(), ex);
         }
     }
