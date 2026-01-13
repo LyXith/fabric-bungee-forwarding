@@ -1,46 +1,40 @@
-name: Build and Release
+name: Build Mod
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       mod_version:
-        description: "Mod version (defaults to tag name without v)"
+        description: "Mod version (e.g., 1.0.0)"
+        required: true
+        default: "1.0.0"
+      minecraft_versions:
+        description: "Minecraft versions to build (comma-separated)"
         required: false
+        default: "1.21.5,1.21.4,1.20.6"
+      include_all_versions:
+        description: "Include all supported Minecraft versions?"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build and publish (${{ matrix.minecraft }})
+  build:
+    name: Build for Minecraft ${{ matrix.minecraft }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        minecraft:
-          - "1.21"
-          - "1.21.1"
-          - "1.21.2"
-          - "1.21.3"
-          - "1.21.4"
-          - "1.21.5"
-          - "1.21.6"
-          - "1.21.7"
-          - "1.21.8"
-          - "1.21.9"
-          - "1.21.10"
-          - "1.21.11"
-          - "1.20.6"
-          - "1.20.5"
+        minecraft: ${{ fromJSON(
+          inputs.include_all_versions == 'true' 
+          ? '["1.21","1.21.1","1.21.2","1.21.3","1.21.4","1.21.5","1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11","1.20.6","1.20.5"]'
+          : format('[{0}]', replace(replace(inputs.minecraft_versions, ' ', ''), ',', '","'))
+        ) }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -49,9 +43,10 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Resolve versions
+      - name: Determine versions
         id: versions
         run: |
+          # 依赖版本映射
           declare -A FABRIC_MAP=(
             ["1.21"]="0.102.0+1.21"
             ["1.21.1"]="0.116.7+1.21.1"
@@ -69,35 +64,19 @@ jobs:
             ["1.20.5"]="0.97.8+1.20.5"
           )
 
-          MOD_VERSION="${{ github.event.inputs.mod_version || '' }}"
-          if [ -z "${MOD_VERSION}" ]; then
-            MOD_VERSION="${GITHUB_REF_NAME#v}"
-          fi
-
           MC_VERSION="${{ matrix.minecraft }}"
-
-          LOADER_VERSION="$(
-            curl -s "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}" \
-            | jq -r '[.[] | select(.loader.stable == true)][0].loader.version'
-          )"
-
-          FABRIC_API_VERSION="$(
-            curl -s "https://api.modrinth.com/v2/project/fabric-api/version?game_versions=[\"${MC_VERSION}\"]&loaders=[\"fabric\"]&featured=true" \
-            | jq -r '.[0].version_number // empty'
-          )"
+          MOD_VERSION="${{ github.event.inputs.mod_version }}"
+          
+          # 获取 Loader 版本
+          LOADER_RESPONSE=$(curl -s "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}" || echo "[]")
+          LOADER_VERSION=$(echo "${LOADER_RESPONSE}" | jq -r '[.[] | select(.loader.stable == true)][0].loader.version // .[0].loader.version // "0.140.2"')
+          
+          # 获取 Fabric API 版本
+          FABRIC_API_VERSION="${FABRIC_MAP[${MC_VERSION}]}"
+          
           if [ -z "${FABRIC_API_VERSION}" ] || [ "${FABRIC_API_VERSION}" = "null" ]; then
-            FABRIC_API_VERSION="$(
-              curl -s "https://api.modrinth.com/v2/project/fabric-api/version?game_versions=[\"${MC_VERSION}\"]&loaders=[\"fabric\"]" \
-              | jq -r '.[0].version_number'
-            )"
-          fi
-          if [ -z "${FABRIC_API_VERSION}" ] || [ "${FABRIC_API_VERSION}" = "null" ]; then
-            FABRIC_API_VERSION="${FABRIC_MAP[${MC_VERSION}]}"
-          fi
-
-          if [ -z "${FABRIC_API_VERSION}" ] || [ "${FABRIC_API_VERSION}" = "null" ]; then
-            echo "Unable to resolve Fabric API for ${MC_VERSION}" >&2
-            exit 1
+            FABRIC_RESPONSE=$(curl -s "https://api.modrinth.com/v2/project/fabric-api/version?game_versions=[\"${MC_VERSION}\"]&loaders=[\"fabric\"]" || echo "[]")
+            FABRIC_API_VERSION=$(echo "${FABRIC_RESPONSE}" | jq -r '.[0].version_number // "0.140.2"')
           fi
 
           echo "mod=${MOD_VERSION}" >> "${GITHUB_OUTPUT}"
@@ -105,29 +84,6 @@ jobs:
           echo "loader=${LOADER_VERSION}" >> "${GITHUB_OUTPUT}"
           echo "fabric_api=${FABRIC_API_VERSION}" >> "${GITHUB_OUTPUT}"
           echo "full_version=${MOD_VERSION}+${MC_VERSION}" >> "${GITHUB_OUTPUT}"
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          CURRENT_TAG="${GITHUB_REF_NAME}"
-          PREV_TAG="$(git tag --sort=-creatordate | grep -v "^${CURRENT_TAG}$" | head -n1)"
-          if [ -z "${PREV_TAG}" ]; then
-            FIRST_COMMIT="$(git rev-list --max-parents=0 HEAD)"
-            RANGE="${FIRST_COMMIT}..HEAD"
-          else
-            RANGE="${PREV_TAG}..HEAD"
-          fi
-
-          LOG="$(git log --pretty=format:'- %s' ${RANGE})"
-          if [ -z "${LOG}" ]; then
-            LOG="No changes since last tag."
-          fi
-
-          {
-            echo "text<<EOF"
-            echo "${LOG}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
 
       - name: Build
         run: |
@@ -137,87 +93,114 @@ jobs:
             -Pfabric_version=${{ steps.versions.outputs.fabric_api }} \
             -Ploader_version=${{ steps.versions.outputs.loader }}
 
-      - name: Publish to Modrinth
-        uses: Kir-Antipov/mc-publish@v3.3
-        with:
-          modrinth-id: SMv011V3
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          files: build/libs/fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}.jar
-          name: Fabric Bungee Forwarding ${{ steps.versions.outputs.full_version }}
-          version: ${{ steps.versions.outputs.full_version }}
-          game-versions: ${{ matrix.minecraft }}
-          loaders: fabric
-          java: 21
-          version-type: release
-          changelog: ${{ steps.changelog.outputs.text }}
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}
           path: build/libs/fabric-bungee-forwarding-${{ steps.versions.outputs.full_version }}.jar
           if-no-files-found: error
+          retention-days: 30
 
-  github-release:
-    name: GitHub release
+  package-artifacts:
+    name: Package all artifacts
     runs-on: ubuntu-latest
-    needs: build-and-publish
-    permissions:
-      contents: write
+    needs: build
+    if: always()
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Determine tag
-        id: tag
-        run: |
-          MOD_VERSION="${{ github.event.inputs.mod_version || '' }}"
-          if [ -z "${MOD_VERSION}" ]; then
-            MOD_VERSION="${GITHUB_REF_NAME#v}"
-          fi
-          echo "mod=${MOD_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          CURRENT_TAG="${GITHUB_REF_NAME}"
-          PREV_TAG="$(git tag --sort=-creatordate | grep -v "^${CURRENT_TAG}$" | head -n1)"
-          if [ -z "${PREV_TAG}" ]; then
-            FIRST_COMMIT="$(git rev-list --max-parents=0 HEAD)"
-            RANGE="${FIRST_COMMIT}..HEAD"
-          else
-            RANGE="${PREV_TAG}..HEAD"
-          fi
-
-          LOG="$(git log --pretty=format:'- %s' ${RANGE})"
-          if [ -z "${LOG}" ]; then
-            LOG="No changes since last tag."
-          fi
-
-          {
-            echo "text<<EOF"
-            echo "${LOG}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Download artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: fabric-bungee-forwarding-*
-          merge-multiple: true
-          path: dist
+          path: artifacts
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+      - name: Create zip archive
+        run: |
+          MOD_VERSION="${{ github.event.inputs.mod_version }}"
+          ZIP_NAME="fabric-bungee-forwarding-${MOD_VERSION}.zip"
+          
+          # 创建文件夹
+          mkdir -p packaged
+          
+          # 复制所有 jar 文件到临时目录
+          mkdir -p temp_builds
+          find artifacts -name "*.jar" -exec cp {} temp_builds/ \;
+          
+          # 创建 README.txt
+          cat > temp_builds/README.txt << EOF
+Fabric Bungee Forwarding ${MOD_VERSION}
+=======================================
+
+Build Information:
+- Mod Version: ${MOD_VERSION}
+- Built on: $(date)
+- GitHub Workflow: ${{ github.run_id }}
+
+Supported Minecraft Versions:
+$(
+  IFS=','; 
+  versions="${{ github.event.inputs.minecraft_versions }}";
+  if [ "${{ github.event.inputs.include_all_versions }}" = "true" ]; then
+    echo "1.21, 1.21.1, 1.21.2, 1.21.3, 1.21.4"
+    echo "1.21.5, 1.21.6, 1.21.7, 1.21.8, 1.21.9"
+    echo "1.21.10, 1.21.11, 1.20.6, 1.20.5"
+  else
+    for ver in $versions; do
+      echo "- $ver"
+    done
+  fi
+)
+
+Installation:
+1. Download the appropriate jar file for your Minecraft version
+2. Place it in your mods folder
+3. Restart your server/client
+
+Note: Each jar file is built for a specific Minecraft version.
+Please make sure to use the correct version.
+
+Files in this archive:
+EOF
+          
+          # 添加文件列表到 README
+          ls -1 temp_builds/*.jar | xargs -I {} basename {} >> temp_builds/README.txt
+          
+          # 创建 zip 文件
+          cd temp_builds && zip -r "../packaged/${ZIP_NAME}" .
+          
+          # 清理
+          cd .. && rm -rf temp_builds
+
+      - name: Upload packaged archive
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Fabric Bungee Forwarding ${{ steps.tag.outputs.mod }}
-          body: ${{ steps.changelog.outputs.text }}
-          files: dist/*.jar
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: fabric-bungee-forwarding-${{ github.event.inputs.mod_version }}-package
+          path: packaged/
+          retention-days: 30
+
+      - name: Generate build summary
+        run: |
+          MOD_VERSION="${{ github.event.inputs.mod_version }}"
+          echo "## Build Summary for Fabric Bungee Forwarding ${MOD_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build completed successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Built versions:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 列出所有构建的版本
+          if [ "${{ github.event.inputs.include_all_versions }}" = "true" ]; then
+            echo "- All supported Minecraft versions (14 versions)" >> $GITHUB_STEP_SUMMARY
+          else
+            IFS=',' read -ra VERSIONS <<< "${{ github.event.inputs.minecraft_versions }}"
+            for version in "${VERSIONS[@]}"; do
+              echo "- Minecraft $version" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts available for download:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Individual jar files for each Minecraft version" >> $GITHUB_STEP_SUMMARY
+          echo "2. Complete package (zip archive)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next steps:" >> $GITHUB_STEP_SUMMARY
+          echo "Download artifacts from the 'Artifacts' section above." >> $GITHUB_STEP_SUMMARY
