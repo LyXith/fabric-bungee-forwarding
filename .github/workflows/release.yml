@@ -17,18 +17,18 @@ jobs:
           java-version: 21
           cache: gradle
       
-      - name: Build for Minecraft 1.21.10
+      - name: Build for Minecraft 1.21.4
         run: |
           # 获取 Fabric Loader 版本
           LOADER_VERSION=$(curl -s "https://meta.fabricmc.net/v2/versions/loader/1.21.10" | jq -r '.[0].loader.version')
           
           # 构建（假设 gradle 脚本已经配置好版本）
           ./gradlew clean build -x test \
-            -Pminecraft_version=1.21.10 \
+            -Pminecraft_version=1.21.4 \
             -Ploader_version=$LOADER_VERSION
       
       - uses: actions/upload-artifact@v4
         with:
-          name: fabric-bungee-forwarding-1.21.10
+          name: fabric-bungee-forwarding-1.21.4
           path: build/libs/*.jar
           retention-days: 30
